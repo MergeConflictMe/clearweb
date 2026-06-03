@@ -7,7 +7,7 @@
     <style>
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; font-family: sans-serif; background: #121212; }
         
-        /* Верхняя панель управления и нативной рекламы */
+        /* Панель управления */
         #control-panel {
             position: fixed; top: 0; left: 0; width: 100%; height: 75px;
             background: #1a1a1a; color: white; display: flex; align-items: center;
@@ -21,10 +21,8 @@
         button { padding: 10px 20px; background: #00ff66; border: none; cursor: pointer; font-weight: bold; border-radius: 4px; color: #121212; font-size: 14px; }
         button:hover { background: #00cc52; }
         
-        /* Место под твой будущий нативный баннер */
         .native-ad-placeholder { width: 300px; height: 50px; background: #222; display: flex; align-items: center; justify-content: center; font-size: 11px; color: #666; border: 1px dashed #444; border-radius: 4px; }
 
-        /* Окно для вывода очищенного сайта */
         #output-viewport {
             position: absolute; top: 75px; left: 0; width: 100%; height: calc(100% - 75px);
             border: none; background: white;
@@ -35,16 +33,13 @@
 
     <div id="control-panel">
         <div class="logo">ClearWeb</div>
-        
         <div class="search-box">
-            <input type="text" id="url-field" placeholder="Вставь адрес сайта (например, habr.com)">
+            <input type="text" id="url-field" placeholder="Вставь домен (например, habr.com)">
             <button onclick="processTargetSite()">Открыть чисто</button>
         </div>
-        
         <div class="native-ad-placeholder">Рекламное место (Нативный блок)</div>
     </div>
 
-    <!-- Фрейм оставляем чистым, но скрипт откроет сайт в новой вкладке для обхода защит -->
     <iframe id="output-viewport"></iframe>
 
     <script src="engine.js"></script>
