@@ -1,10 +1,13 @@
-// engine.js — Клиентский движок ClearWeb с обходом CORS через РФ-прокси и открытием в новой вкладке
+// engine.js — Корректная сборка под российский CORS-прокси
 
 async function processTargetSite() {
     let targetUrl = document.getElementById('url-field').value.trim();
     if (!targetUrl) return alert('Пожалуйста, введи адрес сайта!');
 
-    // Автоматически добавляем протокол https, если пользователь ввел просто домен
+    // Очищаем адрес от случайных пробелов и мусора
+    targetUrl = targetUrl.replace(/\s+/g, '');
+
+    // Если пользователь не ввёл протокол, добавляем строго https://
     if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
         targetUrl = 'https://' + targetUrl;
     }
@@ -14,20 +17,25 @@ async function processTargetSite() {
     btn.textContent = 'Чистка рекламы...';
     btn.disabled = true;
 
-    // ИСПОЛЬЗУЕМ НАДЕЖНЫЙ РОССИЙСКИЙ ПРОКСИ-МОСТ ДЛЯ ОБХОДА БЛОКИРОВОК И CORS
-    const proxyUrl = 'https://cors.su/?url=' + encodeURIComponent(targetUrl);
+    // Сборка URL строго по документации прокси-сервера cors.su
+    const proxyBase = 'https://cors.su/';
+    const proxyUrl = proxyBase + '?url=' + encodeURIComponent(targetUrl);
 
     try {
-        // 1. Загружаем исходный код целевого сайта напрямую в виде текста через прокси
+        // 1. Делаем запрос к прокси
         const response = await fetch(proxyUrl);
-        if (!response.ok) throw new Error('Не удалось получить ответ от прокси-сервера.');
+        
+        if (!response.ok) {
+            throw new Error(`Сервер ответил ошибкой: ${response.status}`);
+        }
+        
         let rawHtml = await response.text();
 
-        // 2. Создаем виртуальное DOM-дерево для хирургической чистки разметки
+        // 2. Создаем виртуальное дерево сайта для зачистки рекламы
         const parser = new DOMParser();
         const doc = parser.parseFromString(rawHtml, 'text/html');
 
-        // 3. Вырезаем известные рекламные селекторы, баннеры и блоки казино
+        // 3. Вырезаем рекламные блоки, тизеры и баннеры казино
         const universalAdSelectors = [
             'iframe[src*="bet"]', 'iframe[src*="casino"]', 'iframe[src*="slot"]', 'iframe[src*="1xbet"]',
             '.adv', '.reklama', '.banner', '[id*="banner"]', '[class*="banner"]',
@@ -38,33 +46,25 @@ async function processTargetSite() {
             element.remove();
         });
 
-        // 4. Внедряем uBlock-скриптлет для глушения рекламных функций внутри видеоплееров
+        // 4. Вживляем наш внутренний uBlock-скриптлет для блокировки функций рекламы внутри плееров
         const uBlockScriptlet = doc.createElement('script');
         uBlockScriptlet.textContent = `
             (function() {
                 console.log('=== КОРНЕВОЙ БЛОКИРОВЩИК CLEARWEB АКТИВИРОВАН ===');
-
-                // Перехватываем и блокируем переменные рекламы в пиратских плеерах
                 window.vast_player_disabled = true;
                 window.showPreroll = false;
                 window.skip_ad_always = true;
                 window.adblock = false; 
-
-                // Глушим вызовы рекламных функций на корню
                 window.show_vast_adv = function() { return false; };
-                window.InteractYandexTarget = function() { return false; };
 
-                // Обезвреживаем сетевые трекеры и запросы к рекламным сетям (Monkey Patching)
                 const originalFetch = window.fetch;
                 window.fetch = async function(...args) {
                     const url = args[0];
                     if (typeof url === 'string' && (
                         url.includes('google-analytics') || 
                         url.includes('yandex.ru/clck') || 
-                        url.includes('doubleclick') || 
-                        url.includes('teaser')
+                        url.includes('doubleclick')
                     )) {
-                        console.log('ClearWeb заблокировал скрытый рекламный запрос к:', url);
                         return new Response('', { status: 404 });
                     }
                     return originalFetch.apply(this, args);
@@ -72,28 +72,24 @@ async function processTargetSite() {
             })();
         `;
         
-        // Вставляем наш скрипт на самый верх секции head, обгоняя выполнение оригинальных скриптов
         if (doc.head) {
             doc.head.insertBefore(uBlockScriptlet, doc.head.firstChild);
-        } else if (doc.documentElement) {
-            doc.documentElement.insertBefore(uBlockScriptlet, doc.documentElement.firstChild);
         }
 
-        // 5. Генерируем финальный чистый HTML код
         const cleanedHtml = doc.documentElement.outerHTML;
 
-        // 6. Открываем новое чистое окно и вливаем туда наш очищенный HTML код (обход CSP защиты сайтов)
+        // 5. Открываем чистый код в новой вкладке, чтобы обойти защиту CSP браузера Chrome
         const cleanWindow = window.open();
         if (cleanWindow) {
             cleanWindow.document.write(cleanedHtml);
             cleanWindow.document.close();
         } else {
-            alert('Браузер заблокировал всплывающее окно! Пожалуйста, разрешите всплывающие окна для этого сайта в строке браузера.');
+            alert('Браузер заблокировал окно! Нажмите на иконку крестика в правой части адресной строки Chrome и выберите "Разрешить всегда".');
         }
 
     } catch (error) {
-        console.error('Ошибка движка ClearWeb:', error);
-        alert('Ошибка при загрузке или очистке сайта: ' + error.message);
+        console.error('Ошибка:', error);
+        alert('Произошла ошибка при загрузке: ' + error.message);
     } finally {
         btn.textContent = originalText;
         btn.disabled = false;
