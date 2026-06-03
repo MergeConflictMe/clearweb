@@ -37,13 +37,14 @@
         <div class="logo">ClearWeb</div>
         
         <div class="search-box">
-            <input type="text" id="url-field" placeholder="Вставь адрес сайта (например, google.com)">
+            <input type="text" id="url-field" placeholder="Вставь адрес сайта (например, habr.com)">
             <button onclick="processTargetSite()">Открыть чисто</button>
         </div>
         
         <div class="native-ad-placeholder">Рекламное место (Нативный блок)</div>
     </div>
 
+    <!-- Фрейм оставляем чистым, но скрипт откроет сайт в новой вкладке для обхода защит -->
     <iframe id="output-viewport"></iframe>
 
     <script src="engine.js"></script>
