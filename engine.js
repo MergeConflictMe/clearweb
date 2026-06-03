@@ -1,4 +1,4 @@
-// engine.js — Универсальный клиентский движок ClearWeb с автоматическим проксированием
+// engine.js — Универсальный клиентский движок ClearWeb с обходом CORS и чисткой рекламы
 
 async function processTargetSite() {
     let targetUrl = document.getElementById('url-field').value.trim();
@@ -11,20 +11,20 @@ async function processTargetSite() {
 
     const viewport = document.getElementById('output-viewport');
     
-    // Используем стабильный прокси allorigins.win, который не требует ручной активации
-    const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(targetUrl);
+    // Используем надежный текстовый прокси-мост codetabs, работающий без JSON оберток
+    const proxyUrl = 'https://api.codetabs.com/v1/proxy/?quest=' + targetUrl;
 
     try {
-        // 1. Загружаем исходный код целевого сайта через прокси
+        // 1. Загружаем исходный код целевого сайта напрямую в виде текста
         const response = await fetch(proxyUrl);
-        if (!response.ok) throw new Error('Не удалось получить ответ от прокси-сервера');
+        if (!response.ok) throw new Error('Не удалось получить ответ от прокси-сервера. Попробуйте позже.');
         let rawHtml = await response.text();
 
-        // 2. Создаем виртуальное DOM-дерево для очистки тегов
+        // 2. Создаем виртуальное DOM-дерево для хирургической чистки разметки
         const parser = new DOMParser();
         const doc = parser.parseFromString(rawHtml, 'text/html');
 
-        // 3. Вырезаем известные рекламные селекторы, iframe казино и баннеры
+        // 3. Вырезаем известные рекламные селекторы, баннеры и блоки казино
         const universalAdSelectors = [
             'iframe[src*="bet"]', 'iframe[src*="casino"]', 'iframe[src*="slot"]', 'iframe[src*="1xbet"]',
             '.adv', '.reklama', '.banner', '[id*="banner"]', '[class*="banner"]',
@@ -35,23 +35,23 @@ async function processTargetSite() {
             element.remove();
         });
 
-        // 4. Внедряем uBlock-скриптлет для перехвата и глушения скриптов плеера
+        // 4. Внедряем uBlock-скриптлет для глушения рекламных функций внутри видеоплееров
         const uBlockScriptlet = doc.createElement('script');
         uBlockScriptlet.textContent = `
             (function() {
                 console.log('=== КОРНЕВОЙ БЛОКИРОВЩИК CLEARWEB АКТИВИРОВАН ===');
 
-                // Жестко блокируем переменные запуска рекламы в пиратских плеерах
+                // Перехватываем и блокируем переменные рекламы в пиратских плеерах
                 window.vast_player_disabled = true;
                 window.showPreroll = false;
                 window.skip_ad_always = true;
                 window.adblock = false; 
 
-                // Подменяем вызовы рекламных функций на пустышки (No-op функции)
+                // Глушим вызовы рекламных функций на корню
                 window.show_vast_adv = function() { return false; };
                 window.InteractYandexTarget = function() { return false; };
 
-                // Обезвреживаем сетевые рекламные запросы (Monkey Patching)
+                // Обезвреживаем сетевые трекеры и запросы к рекламным сетям (Monkey Patching)
                 const originalFetch = window.fetch;
                 window.fetch = async function(...args) {
                     const url = args[0];
@@ -61,15 +61,15 @@ async function processTargetSite() {
                         url.includes('doubleclick') || 
                         url.includes('teaser')
                     )) {
-                        console.log('ClearWeb заблокировал запрос к рекламе:', url);
-                        return new Response('', { status: 404 }); // Подменяем ответ ошибкой
+                        console.log('ClearWeb заблокировал скрытый рекламный запрос к:', url);
+                        return new Response('', { status: 404 });
                     }
                     return originalFetch.apply(this, args);
                 };
             })();
         `;
         
-        // Вставляем наш скрипт на самый верх секции head, чтобы обогнать все скрипты сайта
+        // Вставляем наш скрипт на самый верх секции head, обгоняя выполнение оригинальных скриптов
         if (doc.head) {
             doc.head.insertBefore(uBlockScriptlet, doc.head.firstChild);
         } else if (doc.documentElement) {
@@ -82,6 +82,6 @@ async function processTargetSite() {
 
     } catch (error) {
         console.error('Ошибка движка ClearWeb:', error);
-        alert('Не удалось загрузить или очистить указанный сайт. Проверь правильность ссылки.');
+        alert('Ошибка при загрузке или очистке сайта: ' + error.message);
     }
 }
