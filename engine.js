@@ -1,123 +1,103 @@
-// engine.js — ClearWeb Core v2.0
-
-const PROXIES = [
-    'https://api.allorigins.win/raw?url=', // Самый стабильный
-    'https://corsproxy.io/?',              // Быстрый
-    'https://cors.su/?url='                // Резервный
-];
-
-function log(msg) {
-    const el = document.getElementById('log-area');
-    el.style.display = 'block';
-    el.innerHTML += `> ${msg}<br>`;
-    console.log(msg);
-}
+// engine.js — ClearWeb Ultimate Edition
 
 async function startCleaning() {
     const input = document.getElementById('url-field');
     const btn = document.getElementById('action-btn');
+    const logArea = document.getElementById('log-area');
+    
     let url = input.value.trim();
-
     if (!url) return alert('Введите адрес сайта!');
     if (!url.startsWith('http')) url = 'https://' + url;
 
     btn.disabled = true;
-    btn.textContent = 'Загрузка...';
-    document.getElementById('log-area').innerHTML = ''; // Очистка лога
+    btn.textContent = '⏳ Загрузка...';
+    logArea.style.display = 'block';
+    logArea.innerHTML = '';
+
+    const log = (msg) => {
+        logArea.innerHTML += `<div>> ${msg}</div>`;
+        console.log(msg);
+    };
 
     try {
+        // 1. Пробуем разные прокси. AllOrigins самый надежный для текста.
+        const proxies = [
+            `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+            `https://corsproxy.io/?${encodeURIComponent(url)}`
+        ];
+
         let htmlContent = null;
+        let usedProxy = '';
 
-        // 1. Попытка загрузки через цепочку прокси
-        for (let proxy of PROXIES) {
+        for (let proxyUrl of proxies) {
             try {
-                log(`Подключение к прокси: ${proxy.split('?')[0].split('//')[1]}...`);
-                const controller = new AbortController();
-                const timeout = setTimeout(() => controller.abort(), 8000); // 8 сек на ответ
-
-                const response = await fetch(proxy + encodeURIComponent(url), {
-                    signal: controller.signal,
-                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36' }
-                });
+                log(`Попытка подключения: ${proxyUrl.split('/')[2]}...`);
                 
-                clearTimeout(timeout);
-                if (response.ok) {
+                const response = await fetch(proxyUrl, {
+                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+                });
+
+                if (!response.ok) throw new Error(`Status ${response.status}`);
+
+                // AllOrigins возвращает JSON, corsproxy.io возвращает сразу текст
+                if (proxyUrl.includes('allorigins')) {
+                    const data = await response.json();
+                    htmlContent = data.contents;
+                } else {
                     htmlContent = await response.text();
-                    log('Сайт успешно загружен.');
+                }
+
+                if (htmlContent && htmlContent.length > 100) {
+                    usedProxy = proxyUrl;
+                    log('✅ Данные получены успешно!');
                     break;
                 }
             } catch (e) {
-                log(`Прокси недоступен, переключаюсь...`);
-                continue;
+                log(`❌ Прокси не ответил: ${e.message}`);
             }
         }
 
-        if (!htmlContent) throw new Error('Не удалось загрузить сайт ни через один прокси.');
+        if (!htmlContent) throw new Error('Не удалось загрузить сайт. Попробуйте позже.');
 
-        // 2. Парсинг и "Ремонт" сайта
-        log('Анализ структуры и удаление рекламы...');
+        // 2. Очистка и "Ремонт" ссылок
+        log('🧹 Удаление рекламы и фиксация ссылок...');
         const parser = new DOMParser();
         const doc = parser.parseFromString(htmlContent, 'text/html');
         const baseUrl = new URL(url);
 
-        // Исправление относительных ссылок (Критически важно!)
-        doc.querySelectorAll('a[href], img[src], link[href], script[src], source[src]').forEach(el => {
+        // Чиним картинки и стили (чтобы сайт не был "лысым")
+        doc.querySelectorAll('a[href], img[src], link[href], script[src]').forEach(el => {
             ['href', 'src'].forEach(attr => {
                 let val = el.getAttribute(attr);
                 if (val && !val.startsWith('http') && !val.startsWith('data:') && !val.startsWith('//')) {
-                    // Превращаем /img/logo.png в https://site.com/img/logo.png
                     try { el.setAttribute(attr, new URL(val, baseUrl).href); } catch(e){}
                 }
             });
         });
 
-        // Массовое удаление рекламы
-        const adSelectors = [
-            'iframe', 'ins', '.ads', '.ad', '.banner', '.reklama', 
-            '[class*="sponsor"]', '[id*="google_ads"]', '.popup', '.modal'
-        ];
-        let count = 0;
-        adSelectors.forEach(sel => {
-            doc.querySelectorAll(sel).forEach(el => {
-                if (el.offsetHeight < 100 || el.className.includes('ad')) {
-                    el.remove();
-                    count++;
-                }
-            });
-        });
-        log(`Удалено рекламных блоков: ${count}`);
+        // Удаляем мусор
+        const trash = ['iframe', '.ads', '.banner', '.reklama', '[class*="ad-"]', '.popup'];
+        trash.forEach(sel => doc.querySelectorAll(sel).forEach(el => el.remove()));
 
-        // Внедрение защиты от динамической рекламы
-        const protector = doc.createElement('script');
-        protector.textContent = `
-            window.fetch = new Proxy(window.fetch, {
-                apply: function(target, thisArg, argumentsList) {
-                    if (argumentsList[0] && argumentsList[0].includes('analytics')) return Promise.reject('Blocked');
-                    return target.apply(thisArg, argumentsList);
-                }
-            });
-        `;
-        if (doc.head) doc.head.prepend(protector);
-
-        // 3. Открытие результата через Blob (Обход блокировки Popup)
-        log('Формирование чистой страницы...');
-        const finalHtml = "<!DOCTYPE html>\n" + doc.documentElement.outerHTML;
-        const blob = new Blob([finalHtml], { type: 'text/html' });
+        // 3. Создаем Blob (виртуальный файл) и открываем его
+        const cleanHtml = "<!DOCTYPE html>\n" + doc.documentElement.outerHTML;
+        const blob = new Blob([cleanHtml], { type: 'text/html' });
         const blobUrl = URL.createObjectURL(blob);
 
-        const newWindow = window.open(blobUrl, '_blank');
+        log('🚀 Открытие чистой версии...');
+        const win = window.open(blobUrl, '_blank');
         
-        if (!newWindow) {
-            // Если браузер все же заблокировал, предлагаем скачать
+        if (!win) {
+            // Если браузер заблокировал окно, скачиваем файл
             const a = document.createElement('a');
             a.href = blobUrl;
-            a.download = 'clearweb_page.html';
+            a.download = 'clearweb_result.html';
             a.click();
-            alert('Браузер заблокировал окно. Файл скачан автоматически.');
+            alert('Окно заблокировано браузером. Файл скачан!');
         }
 
     } catch (err) {
-        log('ОШИБКА: ' + err.message);
+        log(`💥 КРИТИЧЕСКАЯ ОШИБКА: ${err.message}`);
         alert('Ошибка: ' + err.message);
     } finally {
         btn.disabled = false;
@@ -125,7 +105,8 @@ async function startCleaning() {
     }
 }
 
-// Поддержка Enter
-document.getElementById('url-field').addEventListener('keypress', function (e) {
-    if (e.key === 'Enter') startCleaning();
+// Запуск по Enter
+document.addEventListener('DOMContentLoaded', () => {
+    const input = document.getElementById('url-field');
+    if(input) input.addEventListener('keypress', e => e.key === 'Enter' && startCleaning());
 });
