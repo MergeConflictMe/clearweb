@@ -3,45 +3,125 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ClearWeb — Универсальный Блокировщик</title>
+    <title>ClearWeb — Универсальный Блокировщик Рекламы</title>
     <style>
-        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; font-family: sans-serif; background: #121212; }
-        
-        /* Панель управления */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body, html { 
+            width: 100%; height: 100%; 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            background: #121212; 
+            color: white;
+        }
         #control-panel {
             position: fixed; top: 0; left: 0; width: 100%; height: 75px;
-            background: #1a1a1a; color: white; display: flex; align-items: center;
-            justify-content: space-between; padding: 0 20px; box-sizing: border-box; z-index: 9999;
+            background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%);
+            display: flex; align-items: center;
+            justify-content: space-between; padding: 0 20px;
+            z-index: 9999;
             border-bottom: 2px solid #00ff66;
+            box-shadow: 0 2px 10px rgba(0, 255, 102, 0.2);
         }
-        .logo { font-weight: bold; font-size: 20px; color: #00ff66; text-transform: uppercase; letter-spacing: 1px; }
-        .search-box { display: flex; gap: 10px; }
-        input { padding: 10px; width: 350px; background: #2a2a2a; border: 1px solid #444; color: white; border-radius: 4px; font-size: 14px; }
-        input:focus { border-color: #00ff66; outline: none; }
-        button { padding: 10px 20px; background: #00ff66; border: none; cursor: pointer; font-weight: bold; border-radius: 4px; color: #121212; font-size: 14px; }
-        button:hover { background: #00cc52; }
-        
-        .native-ad-placeholder { width: 300px; height: 50px; background: #222; display: flex; align-items: center; justify-content: center; font-size: 11px; color: #666; border: 1px dashed #444; border-radius: 4px; }
-
-        #output-viewport {
-            position: absolute; top: 75px; left: 0; width: 100%; height: calc(100% - 75px);
-            border: none; background: white;
+        .logo { 
+            font-weight: bold; font-size: 24px; 
+            color: #00ff66; text-transform: uppercase; 
+            letter-spacing: 2px;
+            text-shadow: 0 0 10px rgba(0, 255, 102, 0.5);
         }
+        .search-box { display: flex; gap: 10px; flex: 1; max-width: 600px; margin: 0 20px; }
+        input { 
+            padding: 12px 15px; flex: 1;
+            background: #2a2a2a; border: 1px solid #444; 
+            color: white; border-radius: 6px; font-size: 14px;
+            transition: all 0.3s;
+        }
+        input:focus { 
+            border-color: #00ff66; outline: none;
+            box-shadow: 0 0 10px rgba(0, 255, 102, 0.3);
+        }
+        button { 
+            padding: 12px 25px; 
+            background: linear-gradient(135deg, #00ff66 0%, #00cc52 100%);
+            border: none; cursor: pointer; font-weight: bold; 
+            border-radius: 6px; color: #121212; font-size: 14px;
+            transition: all 0.3s; text-transform: uppercase; letter-spacing: 1px;
+        }
+        button:hover { 
+            background: linear-gradient(135deg, #00cc52 0%, #00aa44 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 255, 102, 0.4);
+        }
+        button:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+        .native-ad-placeholder { 
+            width: 300px; height: 50px; background: #222; 
+            display: flex; align-items: center; justify-content: center; 
+            font-size: 11px; color: #666; border: 1px dashed #444; border-radius: 6px;
+        }
+        .main-content { margin-top: 75px; padding: 40px 20px; text-align: center; }
+        .hero { max-width: 800px; margin: 0 auto; }
+        .hero h1 {
+            font-size: 48px; margin-bottom: 20px; color: #00ff66;
+            text-shadow: 0 0 20px rgba(0, 255, 102, 0.5);
+        }
+        .hero p { font-size: 18px; color: #ccc; margin-bottom: 30px; line-height: 1.6; }
+        .features {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px; margin-top: 50px; max-width: 1200px; margin-left: auto; margin-right: auto;
+        }
+        .feature-card {
+            background: #1a1a1a; padding: 30px; border-radius: 10px;
+            border: 1px solid #333; transition: all 0.3s;
+        }
+        .feature-card:hover {
+            border-color: #00ff66; transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0, 255, 102, 0.2);
+        }
+        .feature-card h3 { color: #00ff66; margin-bottom: 15px; font-size: 20px; }
+        .feature-card p { color: #aaa; font-size: 14px; line-height: 1.5; }
+        .stats { display: flex; justify-content: center; gap: 50px; margin: 50px 0; flex-wrap: wrap; }
+        .stat-item { text-align: center; }
+        .stat-number { font-size: 48px; font-weight: bold; color: #00ff66; display: block; }
+        .stat-label { color: #888; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; }
+        footer {
+            text-align: center; padding: 30px; color: #666; font-size: 12px;
+            border-top: 1px solid #333; margin-top: 50px;
+        }
+        footer a { color: #00ff66; text-decoration: none; }
+        footer a:hover { text-decoration: underline; }
     </style>
 </head>
 <body>
-
     <div id="control-panel">
-        <div class="logo">ClearWeb</div>
+        <div class="logo">🛡️ ClearWeb</div>
         <div class="search-box">
-            <input type="text" id="url-field" placeholder="Вставь домен (например, habr.com)">
+            <input type="text" id="url-field" placeholder="Введи домен (например, habr.com)">
             <button onclick="processTargetSite()">Открыть чисто</button>
         </div>
         <div class="native-ad-placeholder">Рекламное место (Нативный блок)</div>
     </div>
-
-    <iframe id="output-viewport"></iframe>
-
+    <div class="main-content">
+        <div class="hero">
+            <h1>Чистый интернет без рекламы</h1>
+            <p>ClearWeb — универсальный блокировщик рекламы, который работает через веб-интерфейс. 
+               Наслаждайтесь чистым контентом без баннеров, тизеров и всплывающих окон.</p>
+        </div>
+        <div class="stats">
+            <div class="stat-item"><span class="stat-number">100%</span><span class="stat-label">Бесплатно</span></div>
+            <div class="stat-item"><span class="stat-number">0</span><span class="stat-label">Установок</span></div>
+            <div class="stat-item"><span class="stat-number">∞</span><span class="stat-label">Сайтов</span></div>
+        </div>
+        <div class="features">
+            <div class="feature-card"><h3>🚫 Блокировка рекламы</h3><p>Удаляет баннеры, тизеры, видео-рекламу и всплывающие окна с любого сайта</p></div>
+            <div class="feature-card"><h3>🔒 Приватность</h3><p>Блокирует трекеры Google Analytics, Яндекс.Метрику и другие системы слежения</p></div>
+            <div class="feature-card"><h3>⚡ Быстрая работа</h3><p>Использует несколько прокси-серверов для максимальной скорости и надёжности</p></div>
+            <div class="feature-card"><h3>🎯 Умная очистка</h3><p>Автоматически определяет и удаляет рекламные блоки по множеству критериев</p></div>
+            <div class="feature-card"><h3>🌐 Универсальность</h3><p>Работает с любыми сайтами без установки расширений или программ</p></div>
+            <div class="feature-card"><h3>🆓 Open Source</h3><p>Открытый исходный код. Можете проверить, модифицировать и использовать свободно</p></div>
+        </div>
+    </div>
+    <footer>
+        <p>© 2026 ClearWeb. Открытый исходный код на <a href="https://github.com/yourusername/clearweb" target="_blank">GitHub</a></p>
+        <p>Проект создан в образовательных целях</p>
+    </footer>
     <script src="engine.js"></script>
 </body>
 </html>
