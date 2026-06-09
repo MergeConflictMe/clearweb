@@ -34,26 +34,55 @@
         #log {
             margin: 20px; padding: 15px; background: #000; color: #00ff66;
             font-family: 'Courier New', monospace; font-size: 13px;
-            border-radius: 6px; display: none; max-height: 300px; overflow-y: auto;
+            border-radius: 6px; display: none; max-height: 400px; overflow-y: auto;
         }
         
         #log div { margin: 5px 0; }
         .error { color: #ff4444; }
         .success { color: #00ff66; }
+        .warning { color: #ffaa00; }
     </style>
 </head>
 <body>
 
 <header>
     <div class="logo">🛡️ ClearWeb</div>
-    <input type="text" id="urlInput" placeholder="Введите сайт (например, habr.com)">
+    <input type="text" id="urlInput" placeholder="Введите сайт (например, example.com)">
     <button onclick="cleanAndOpen()" id="btn">Открыть чисто</button>
 </header>
 
 <div id="log"></div>
 
 <script>
-// ВЕСЬ КОД ВНУТРИ HTML - НИКАКИХ ВНЕШНИХ ФАЙЛОВ
+// Массив прокси с разными методами работы
+const PROXIES = [
+    {
+        name: 'corsproxy.io',
+        url: (target) => `https://corsproxy.io/?${encodeURIComponent(target)}`,
+        parse: (response) => response.text()
+    },
+    {
+        name: 'allorigins.win',
+        url: (target) => `https://api.allorigins.win/get?url=${encodeURIComponent(target)}`,
+        parse: async (response) => {
+            const data = await response.json();
+            return data.contents;
+        }
+    },
+    {
+        name: 'cors.lol',
+        url: (target) => `https://cors.lol/?url=${encodeURIComponent(target)}`,
+        parse: async (response) => {
+            const data = await response.json();
+            return data.html || data.contents;
+        }
+    },
+    {
+        name: 'thingproxy.freeboard.io',
+        url: (target) => `https://thingproxy.freeboard.io/fetch/${target}`,
+        parse: (response) => response.text()
+    }
+];
 
 async function cleanAndOpen() {
     const input = document.getElementById('urlInput');
@@ -75,9 +104,9 @@ async function cleanAndOpen() {
     logDiv.style.display = 'block';
     logDiv.innerHTML = '<div class="success">▶ Инициализация ClearWeb...</div>';
 
-    const log = (msg, isError = false) => {
+    const log = (msg, type = 'info') => {
         const div = document.createElement('div');
-        div.className = isError ? 'error' : '';
+        div.className = type;
         div.textContent = msg;
         logDiv.appendChild(div);
         logDiv.scrollTop = logDiv.scrollHeight;
@@ -85,26 +114,55 @@ async function cleanAndOpen() {
     };
 
     try {
-        log('▶ Подключение к прокси-серверу...');
-        
-        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-        const response = await fetch(proxyUrl);
-        
-        if (!response.ok) {
-            throw new Error(`Сервер вернул ошибку: ${response.status}`);
-        }
-        
-        log('▶ Получение данных...');
-        const data = await response.json();
-        
-        if (!data.contents) {
-            throw new Error('Прокси вернул пустой ответ');
+        let htmlContent = null;
+        let usedProxy = null;
+
+        // Перебираем все прокси по очереди
+        for (let i = 0; i < PROXIES.length; i++) {
+            const proxy = PROXIES[i];
+            log(`▶ Попытка ${i + 1}/${PROXIES.length}: ${proxy.name}...`);
+            
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 7000); // 7 секунд таймаут
+
+                const proxyUrl = proxy.url(url);
+                const response = await fetch(proxyUrl, {
+                    signal: controller.signal,
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                    }
+                });
+                
+                clearTimeout(timeoutId);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                htmlContent = await proxy.parse(response);
+                
+                if (htmlContent && htmlContent.length > 100) {
+                    log(`✅ Успешно через ${proxy.name}!`, 'success');
+                    usedProxy = proxy;
+                    break;
+                } else {
+                    throw new Error('Пустой ответ');
+                }
+            } catch (err) {
+                log(`❌ ${proxy.name} не сработал: ${err.message}`, 'warning');
+                continue;
+            }
         }
 
-        log('✅ Данные получены. Начинаю очистку...');
+        if (!htmlContent) {
+            throw new Error('Все прокси-серверы недоступны. Попробуйте позже или используйте другой сайт.');
+        }
+
+        log('▶ Начинаю очистку HTML...');
         
         const parser = new DOMParser();
-        const doc = parser.parseFromString(data.contents, 'text/html');
+        const doc = parser.parseFromString(htmlContent, 'text/html');
         const baseUrl = new URL(url);
 
         log('▶ Исправление ссылок на ресурсы...');
@@ -120,7 +178,7 @@ async function cleanAndOpen() {
                 }
             });
         });
-        log(`✅ Исправлено ссылок: ${fixedCount}`);
+        log(`✅ Исправлено ссылок: ${fixedCount}`, 'success');
 
         log('▶ Удаление рекламных блоков...');
         const adSelectors = [
@@ -137,31 +195,31 @@ async function cleanAndOpen() {
                 removedCount++;
             });
         });
-        log(`✅ Удалено элементов: ${removedCount}`);
+        log(`✅ Удалено элементов: ${removedCount}`, 'success');
 
         log('▶ Формирование чистой страницы...');
         const cleanHtml = "<!DOCTYPE html>\n" + doc.documentElement.outerHTML;
         const blob = new Blob([cleanHtml], { type: 'text/html' });
         const blobUrl = URL.createObjectURL(blob);
 
-        log('✅ Открытие в новой вкладке...');
+        log('▶ Открытие в новой вкладке...');
         const newWindow = window.open(blobUrl, '_blank');
         
         if (!newWindow) {
-            log('⚠ Браузер заблокировал всплывающее окно. Скачиваю файл...', true);
+            log('⚠ Браузер заблокировал всплывающее окно. Скачиваю файл...', 'warning');
             const a = document.createElement('a');
             a.href = blobUrl;
             a.download = 'clearweb_page.html';
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
-            log('✅ Файл скачан! Откройте его вручную.');
+            log('✅ Файл скачан! Откройте его вручную.', 'success');
         } else {
-            log('✅ Готово! Чистая страница открыта в новой вкладке.');
+            log('✅ Готово! Чистая страница открыта в новой вкладке.', 'success');
         }
 
     } catch (err) {
-        log('❌ ОШИБКА: ' + err.message, true);
+        log('❌ КРИТИЧЕСКАЯ ОШИБКА: ' + err.message, 'error');
         alert('Произошла ошибка: ' + err.message);
     } finally {
         btn.disabled = false;
@@ -176,7 +234,7 @@ document.getElementById('urlInput').addEventListener('keypress', function(e) {
     }
 });
 
-console.log('ClearWeb загружен и готов к работе!');
+console.log('ClearWeb v3.0 загружен. Доступно прокси: ' + PROXIES.length);
 </script>
 
 </body>
