@@ -3,65 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ClearWeb — Чистый Интернет</title>
+    <title>ClearWeb — Блокировщик Рекламы</title>
     <style>
-        :root { --primary: #00ff66; --bg: #121212; --panel: #1a1a1a; }
-        body, html { margin: 0; padding: 0; width: 100%; height: 100%; font-family: 'Segoe UI', sans-serif; background: var(--bg); color: white; overflow-x: hidden; }
-        
-        /* Панель управления */
-        #control-panel {
-            position: fixed; top: 0; left: 0; width: 100%; height: 70px;
-            background: var(--panel); display: flex; align-items: center; justify-content: space-between;
-            padding: 0 30px; box-sizing: border-box; z-index: 1000;
-            border-bottom: 2px solid var(--primary); box-shadow: 0 5px 20px rgba(0,0,0,0.5);
-        }
-        .logo { font-weight: 800; font-size: 22px; color: var(--primary); letter-spacing: 1px; text-transform: uppercase; }
-        .search-container { display: flex; gap: 10px; flex: 1; max-width: 600px; margin: 0 40px; }
-        
-        input {
-            flex: 1; padding: 12px 15px; background: #252525; border: 1px solid #444;
-            color: white; border-radius: 8px; font-size: 15px; transition: 0.3s;
-        }
-        input:focus { border-color: var(--primary); outline: none; box-shadow: 0 0 10px rgba(0, 255, 102, 0.2); }
-        
-        button {
-            padding: 12px 25px; background: var(--primary); border: none; cursor: pointer;
-            font-weight: bold; border-radius: 8px; color: #000; font-size: 14px; transition: 0.3s;
-        }
-        button:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0, 255, 102, 0.4); }
-        button:disabled { opacity: 0.5; cursor: wait; transform: none; }
-
-        /* Основной контент (приветствие) */
-        #main-view {
-            margin-top: 70px; padding: 50px 20px; text-align: center;
-            display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: calc(100vh - 70px);
-        }
-        h1 { font-size: 3rem; margin-bottom: 20px; text-shadow: 0 0 20px rgba(0, 255, 102, 0.3); }
-        p { color: #aaa; font-size: 1.2rem; max-width: 600px; line-height: 1.6; }
-        
-        .status-log {
-            margin-top: 30px; padding: 15px; background: #1f1f1f; border-radius: 8px;
-            font-family: monospace; color: #00ff66; font-size: 12px; display: none;
-        }
+        body { margin: 0; font-family: sans-serif; background: #121212; color: white; }
+        header { background: #1a1a1a; padding: 15px; border-bottom: 2px solid #00ff66; display: flex; gap: 10px; align-items: center; }
+        input { flex: 1; padding: 10px; background: #333; border: 1px solid #555; color: white; border-radius: 4px; }
+        button { padding: 10px 20px; background: #00ff66; border: none; font-weight: bold; cursor: pointer; border-radius: 4px; }
+        button:disabled { background: #555; cursor: not-allowed; }
+        #log { margin: 20px; padding: 10px; background: #000; color: #0f0; font-family: monospace; display: none; }
     </style>
 </head>
 <body>
 
-    <div id="control-panel">
-        <div class="logo">🛡️ ClearWeb</div>
-        <div class="search-container">
-            <input type="text" id="url-field" placeholder="Введи сайт (например, habr.com)">
-            <button onclick="startCleaning()" id="action-btn">Очистить</button>
-        </div>
-        <div style="font-size: 12px; color: #555;">v2.0 Stable</div>
-    </div>
+<header>
+    <div style="font-weight:bold; color:#00ff66;">🛡️ ClearWeb</div>
+    <input type="text" id="urlInput" placeholder="Введите сайт (например, habr.com)">
+    <button onclick="cleanAndOpen()" id="btn">Открыть чисто</button>
+</header>
 
-    <div id="main-view">
-        <h1>Интернет без мусора</h1>
-        <p>Введите адрес сайта выше. Мы загрузим его через защищенный канал, вырежем рекламу, трекеры и баннеры, а затем покажем вам чистую версию.</p>
-        <div id="log-area" class="status-log"></div>
-    </div>
+<div id="log"></div>
 
-    <script src="engine.js"></script>
+<script src="engine.js"></script>
 </body>
 </html>
