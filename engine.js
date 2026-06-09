@@ -1,171 +1,131 @@
-// engine.js — Стабильная версия ClearWeb
+// engine.js — ClearWeb Core v2.0
 
-async function processTargetSite() {
+const PROXIES = [
+    'https://api.allorigins.win/raw?url=', // Самый стабильный
+    'https://corsproxy.io/?',              // Быстрый
+    'https://cors.su/?url='                // Резервный
+];
+
+function log(msg) {
+    const el = document.getElementById('log-area');
+    el.style.display = 'block';
+    el.innerHTML += `> ${msg}<br>`;
+    console.log(msg);
+}
+
+async function startCleaning() {
     const input = document.getElementById('url-field');
-    const btn = document.querySelector('button');
-    let targetUrl = input.value.trim();
+    const btn = document.getElementById('action-btn');
+    let url = input.value.trim();
 
-    if (!targetUrl) {
-        alert('Пожалуйста, введи адрес сайта!');
-        return;
-    }
+    if (!url) return alert('Введите адрес сайта!');
+    if (!url.startsWith('http')) url = 'https://' + url;
 
-    // Нормализация URL
-    if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
-        targetUrl = 'https://' + targetUrl;
-    }
-
-    // Валидация URL
-    try {
-        new URL(targetUrl);
-    } catch (_) {
-        alert('Некорректный URL адрес!');
-        return;
-    }
-
-    const originalText = btn.textContent;
-    btn.textContent = '⏳ Загрузка и очистка...';
     btn.disabled = true;
-    input.disabled = true;
+    btn.textContent = 'Загрузка...';
+    document.getElementById('log-area').innerHTML = ''; // Очистка лога
 
     try {
-        // Список прокси для перебора (если один не работает, берем другой)
-        const proxies = [
-            `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`,
-            `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`,
-            `https://cors.su/?url=${encodeURIComponent(targetUrl)}` 
-        ];
+        let htmlContent = null;
 
-        let rawHtml = null;
-        let lastError = null;
-
-        // Пробуем каждый прокси по очереди
-        for (const proxyUrl of proxies) {
+        // 1. Попытка загрузки через цепочку прокси
+        for (let proxy of PROXIES) {
             try {
-                console.log(`Попытка загрузки через: ${proxyUrl}`);
+                log(`Подключение к прокси: ${proxy.split('?')[0].split('//')[1]}...`);
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 10000); // Тайм-аут 10 сек
+                const timeout = setTimeout(() => controller.abort(), 8000); // 8 сек на ответ
 
-                const response = await fetch(proxyUrl, {
+                const response = await fetch(proxy + encodeURIComponent(url), {
                     signal: controller.signal,
-                    headers: {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-                    }
+                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36' }
                 });
                 
-                clearTimeout(timeoutId);
-
+                clearTimeout(timeout);
                 if (response.ok) {
-                    rawHtml = await response.text();
-                    console.log('Успешно загружено через прокси.');
-                    break; // Если успешно, выходим из цикла
+                    htmlContent = await response.text();
+                    log('Сайт успешно загружен.');
+                    break;
                 }
-            } catch (err) {
-                console.warn(`Прокси ${proxyUrl} не сработал:`, err);
-                lastError = err;
+            } catch (e) {
+                log(`Прокси недоступен, переключаюсь...`);
                 continue;
             }
         }
 
-        if (!rawHtml) {
-            throw new Error('Не удалось загрузить сайт. Все прокси-серверы недоступны или заблокированы.');
-        }
+        if (!htmlContent) throw new Error('Не удалось загрузить сайт ни через один прокси.');
 
-        // --- ОЧИСТКА HTML ---
+        // 2. Парсинг и "Ремонт" сайта
+        log('Анализ структуры и удаление рекламы...');
         const parser = new DOMParser();
-        const doc = parser.parseFromString(rawHtml, 'text/html');
-        const baseUrl = new URL(targetUrl);
+        const doc = parser.parseFromString(htmlContent, 'text/html');
+        const baseUrl = new URL(url);
 
-        // 1. Исправление относительных путей (картинки, ссылки, стили)
+        // Исправление относительных ссылок (Критически важно!)
         doc.querySelectorAll('a[href], img[src], link[href], script[src], source[src]').forEach(el => {
             ['href', 'src'].forEach(attr => {
-                const val = el.getAttribute(attr);
+                let val = el.getAttribute(attr);
                 if (val && !val.startsWith('http') && !val.startsWith('data:') && !val.startsWith('//')) {
-                    try {
-                        el.setAttribute(attr, new URL(val, baseUrl).href);
-                    } catch (e) { /* игнорируем битые ссылки */ }
+                    // Превращаем /img/logo.png в https://site.com/img/logo.png
+                    try { el.setAttribute(attr, new URL(val, baseUrl).href); } catch(e){}
                 }
             });
         });
 
-        // 2. Удаление рекламы (CSS селекторы)
+        // Массовое удаление рекламы
         const adSelectors = [
-            'iframe', 'ins', '.ads', '.ad', '.banner', '.reklama', '#advertisement',
-            '[class*="ad-"]', '[id*="ad-"]', '[class*="banner"]', '[class*="sponsor"]',
-            'div[id*="google_ads"]', 'div[class*="popup"]', '.modal-overlay'
+            'iframe', 'ins', '.ads', '.ad', '.banner', '.reklama', 
+            '[class*="sponsor"]', '[id*="google_ads"]', '.popup', '.modal'
         ];
-        
-        let removedCount = 0;
-        adSelectors.forEach(selector => {
-            doc.querySelectorAll(selector).forEach(el => {
-                // Простая эвристика: если элемент маленький или скрыт, удаляем
-                if (el.offsetHeight < 50 || el.offsetWidth < 50 || el.className.includes('ad')) {
+        let count = 0;
+        adSelectors.forEach(sel => {
+            doc.querySelectorAll(sel).forEach(el => {
+                if (el.offsetHeight < 100 || el.className.includes('ad')) {
                     el.remove();
-                    removedCount++;
+                    count++;
                 }
             });
         });
-        console.log(`Удалено элементов: ${removedCount}`);
+        log(`Удалено рекламных блоков: ${count}`);
 
-        // 3. Внедрение скрипта блокировки внутри страницы
-        const blockerScript = doc.createElement('script');
-        blockerScript.textContent = `
-            (function() {
-                console.log('ClearWeb Active');
-                // Блокировка fetch запросов к трекерам
-                const origFetch = window.fetch;
-                window.fetch = function(...args) {
-                    if (args[0] && typeof args[0] === 'string' && 
-                        (args[0].includes('analytics') || args[0].includes('doubleclick'))) {
-                        return Promise.reject('Blocked by ClearWeb');
-                    }
-                    return origFetch.apply(this, args);
-                };
-            })();
+        // Внедрение защиты от динамической рекламы
+        const protector = doc.createElement('script');
+        protector.textContent = `
+            window.fetch = new Proxy(window.fetch, {
+                apply: function(target, thisArg, argumentsList) {
+                    if (argumentsList[0] && argumentsList[0].includes('analytics')) return Promise.reject('Blocked');
+                    return target.apply(thisArg, argumentsList);
+                }
+            });
         `;
-        if (doc.head) doc.head.prepend(blockerScript);
+        if (doc.head) doc.head.prepend(protector);
 
-        // 4. Формирование итогового HTML
-        const finalHtml = doc.documentElement.outerHTML;
+        // 3. Открытие результата через Blob (Обход блокировки Popup)
+        log('Формирование чистой страницы...');
+        const finalHtml = "<!DOCTYPE html>\n" + doc.documentElement.outerHTML;
+        const blob = new Blob([finalHtml], { type: 'text/html' });
+        const blobUrl = URL.createObjectURL(blob);
 
-        // --- ОТКРЫТИЕ РЕЗУЛЬТАТА ---
+        const newWindow = window.open(blobUrl, '_blank');
         
-        // Попытка открыть в новом окне
-        const newWindow = window.open('', '_blank');
-        
-        if (newWindow) {
-            newWindow.document.write(finalHtml);
-            newWindow.document.close(); // Важно для завершения загрузки
-        } else {
-            // Если браузер заблокировал popup, скачиваем файл
-            const blob = new Blob([finalHtml], { type: 'text/html' });
-            const url = URL.createObjectURL(blob);
+        if (!newWindow) {
+            // Если браузер все же заблокировал, предлагаем скачать
             const a = document.createElement('a');
-            a.href = url;
-            a.download = `clearweb_${baseUrl.hostname}.html`;
-            document.body.appendChild(a);
+            a.href = blobUrl;
+            a.download = 'clearweb_page.html';
             a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            alert('Браузер заблокировал всплывающее окно. Файл скачан на компьютер. Откройте его вручную.');
+            alert('Браузер заблокировал окно. Файл скачан автоматически.');
         }
 
-    } catch (error) {
-        console.error(error);
-        alert('Ошибка: ' + error.message);
+    } catch (err) {
+        log('ОШИБКА: ' + err.message);
+        alert('Ошибка: ' + err.message);
     } finally {
-        btn.textContent = originalText;
         btn.disabled = false;
-        input.disabled = false;
+        btn.textContent = 'Очистить';
     }
 }
 
-// Обработка нажатия Enter
-document.addEventListener('DOMContentLoaded', () => {
-    const input = document.getElementById('url-field');
-    if (input) {
-        input.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') processTargetSite();
-        });
-    }
+// Поддержка Enter
+document.getElementById('url-field').addEventListener('keypress', function (e) {
+    if (e.key === 'Enter') startCleaning();
 });
