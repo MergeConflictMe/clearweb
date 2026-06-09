@@ -1,202 +1,171 @@
-// engine.js — Улучшенная версия ClearWeb
+// engine.js — Стабильная версия ClearWeb
 
 async function processTargetSite() {
-    let targetUrl = document.getElementById('url-field').value.trim();
-    if (!targetUrl) return alert('Пожалуйста, введи адрес сайта!');
+    const input = document.getElementById('url-field');
+    const btn = document.querySelector('button');
+    let targetUrl = input.value.trim();
 
-    targetUrl = targetUrl.replace(/\s+/g, '');
+    if (!targetUrl) {
+        alert('Пожалуйста, введи адрес сайта!');
+        return;
+    }
 
+    // Нормализация URL
     if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
         targetUrl = 'https://' + targetUrl;
     }
 
+    // Валидация URL
     try {
         new URL(targetUrl);
-    } catch (e) {
-        return alert('Некорректный URL адрес!');
+    } catch (_) {
+        alert('Некорректный URL адрес!');
+        return;
     }
 
-    const btn = document.querySelector('button');
     const originalText = btn.textContent;
-    btn.textContent = 'Загрузка...';
+    btn.textContent = '⏳ Загрузка и очистка...';
     btn.disabled = true;
+    input.disabled = true;
 
     try {
-        const proxyUrls = [
-            `https://cors.su/?url=${encodeURIComponent(targetUrl)}`,
+        // Список прокси для перебора (если один не работает, берем другой)
+        const proxies = [
             `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`,
-            `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`
+            `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`,
+            `https://cors.su/?url=${encodeURIComponent(targetUrl)}` 
         ];
 
         let rawHtml = null;
+        let lastError = null;
 
-        for (const proxyUrl of proxyUrls) {
+        // Пробуем каждый прокси по очереди
+        for (const proxyUrl of proxies) {
             try {
+                console.log(`Попытка загрузки через: ${proxyUrl}`);
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000); // Тайм-аут 10 сек
+
                 const response = await fetch(proxyUrl, {
-                    method: 'GET',
-                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+                    signal: controller.signal,
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                    }
                 });
                 
+                clearTimeout(timeoutId);
+
                 if (response.ok) {
                     rawHtml = await response.text();
-                    console.log('Успешно загружено через:', proxyUrl);
-                    break;
+                    console.log('Успешно загружено через прокси.');
+                    break; // Если успешно, выходим из цикла
                 }
-            } catch (e) {
-                console.warn('Прокси не сработал:', proxyUrl, e);
+            } catch (err) {
+                console.warn(`Прокси ${proxyUrl} не сработал:`, err);
+                lastError = err;
                 continue;
             }
         }
 
         if (!rawHtml) {
-            throw new Error('Все прокси-серверы недоступны. Попробуйте позже.');
+            throw new Error('Не удалось загрузить сайт. Все прокси-серверы недоступны или заблокированы.');
         }
 
+        // --- ОЧИСТКА HTML ---
         const parser = new DOMParser();
         const doc = parser.parseFromString(rawHtml, 'text/html');
-
         const baseUrl = new URL(targetUrl);
+
+        // 1. Исправление относительных путей (картинки, ссылки, стили)
         doc.querySelectorAll('a[href], img[src], link[href], script[src], source[src]').forEach(el => {
             ['href', 'src'].forEach(attr => {
-                const value = el.getAttribute(attr);
-                if (value && !value.startsWith('http') && !value.startsWith('data:') && !value.startsWith('//')) {
+                const val = el.getAttribute(attr);
+                if (val && !val.startsWith('http') && !val.startsWith('data:') && !val.startsWith('//')) {
                     try {
-                        el.setAttribute(attr, new URL(value, baseUrl).href);
-                    } catch (e) {
-                        console.warn('Не удалось исправить путь:', value);
-                    }
+                        el.setAttribute(attr, new URL(val, baseUrl).href);
+                    } catch (e) { /* игнорируем битые ссылки */ }
                 }
             });
         });
 
-        const universalAdSelectors = [
-            'iframe[src*="bet"]', 'iframe[src*="casino"]', 'iframe[src*="slot"]', 
-            'iframe[src*="1xbet"]', 'iframe[src*="ad"]', 'iframe[src*="banner"]',
-            '.adv', '.reklama', '.banner', '.advertisement', '.ads', '.ad-container',
-            '[id*="banner"]', '[class*="banner"]', '[id*="reklama"]', '[class*="reklama"]',
-            '[id*="ad-"]', '[class*="ad-"]', '[id*="ads"]', '[class*="ads"]',
-            'ins.adsbygoogle', '.adsbygoogle', '[id*="google_ads"]', '[class*="google_ads"]',
-            'div[class*="teaser"]', 'div[id*="teaser"]',
-            'a[href*="vulkan"]', 'a[href*="casino"]', 'a[href*="bet"]', 'a[href*="1xbet"]',
-            'a[href*="slot"]', 'a[href*="poker"]',
-            '.popunder', '.popup', '.modal-ad', '.overlay-ad',
-            '[class*="video-ad"]', '[id*="video-ad"]', '.preroll', '.midroll',
-            '.social-widgets', '.share-buttons',
-            'script[src*="google-analytics"]', 'script[src*="yandex.ru/metrika"]',
-            'script[src*="doubleclick"]', 'script[src*="facebook.com/tr"]'
+        // 2. Удаление рекламы (CSS селекторы)
+        const adSelectors = [
+            'iframe', 'ins', '.ads', '.ad', '.banner', '.reklama', '#advertisement',
+            '[class*="ad-"]', '[id*="ad-"]', '[class*="banner"]', '[class*="sponsor"]',
+            'div[id*="google_ads"]', 'div[class*="popup"]', '.modal-overlay'
         ];
         
         let removedCount = 0;
-        doc.querySelectorAll(universalAdSelectors.join(',')).forEach(element => {
-            element.remove();
-            removedCount++;
+        adSelectors.forEach(selector => {
+            doc.querySelectorAll(selector).forEach(el => {
+                // Простая эвристика: если элемент маленький или скрыт, удаляем
+                if (el.offsetHeight < 50 || el.offsetWidth < 50 || el.className.includes('ad')) {
+                    el.remove();
+                    removedCount++;
+                }
+            });
         });
+        console.log(`Удалено элементов: ${removedCount}`);
 
-        console.log(`Удалено рекламных блоков: ${removedCount}`);
-
-        const uBlockScriptlet = doc.createElement('script');
-        uBlockScriptlet.textContent = `
+        // 3. Внедрение скрипта блокировки внутри страницы
+        const blockerScript = doc.createElement('script');
+        blockerScript.textContent = `
             (function() {
-                'use strict';
-                console.log('=== CLEARWEB AD BLOCKER АКТИВИРОВАН ===');
-                
-                window.vast_player_disabled = true;
-                window.showPreroll = false;
-                window.skip_ad_always = true;
-                window.adblock = false;
-                window.show_vast_adv = function() { return false; };
-                window.Ya = window.Ya || {};
-                window.Ya.adfox = function() { return { render: function(){} }; };
-                
-                const originalFetch = window.fetch;
-                window.fetch = async function(...args) {
-                    const url = typeof args[0] === 'string' ? args[0] : args[0].url;
-                    const blockedDomains = [
-                        'google-analytics', 'googletagmanager', 'doubleclick',
-                        'yandex.ru/clck', 'yandex.ru/metrika', 'facebook.com/tr',
-                        'vk.com/rtrg', 'mail.ru/count', 'adriver', 'adfox',
-                        'bet.', 'casino.', 'slot.', '1xbet'
-                    ];
-                    
-                    if (blockedDomains.some(domain => url.includes(domain))) {
-                        console.log('Заблокирован запрос:', url);
-                        return new Response('', { status: 404, statusText: 'Blocked by ClearWeb' });
+                console.log('ClearWeb Active');
+                // Блокировка fetch запросов к трекерам
+                const origFetch = window.fetch;
+                window.fetch = function(...args) {
+                    if (args[0] && typeof args[0] === 'string' && 
+                        (args[0].includes('analytics') || args[0].includes('doubleclick'))) {
+                        return Promise.reject('Blocked by ClearWeb');
                     }
-                    return originalFetch.apply(this, args);
+                    return origFetch.apply(this, args);
                 };
-                
-                const originalXHR = window.XMLHttpRequest.prototype.open;
-                window.XMLHttpRequest.prototype.open = function(method, url) {
-                    const blockedDomains = ['google-analytics', 'doubleclick', 'yandex.ru/metrika'];
-                    if (blockedDomains.some(domain => url.includes(domain))) {
-                        console.log('Заблокирован XHR:', url);
-                        this.abort();
-                        return;
-                    }
-                    return originalXHR.apply(this, arguments);
-                };
-                
-                const observer = new MutationObserver((mutations) => {
-                    mutations.forEach((mutation) => {
-                        mutation.addedNodes.forEach((node) => {
-                            if (node.nodeType === 1) {
-                                const adSelectors = ['.banner', '.ad', '.reklama', '[class*="ad-"]'];
-                                if (adSelectors.some(sel => node.matches && node.matches(sel))) {
-                                    console.log('Удалена динамическая реклама:', node);
-                                    node.remove();
-                                }
-                            }
-                        });
-                    });
-                });
-                observer.observe(document.body, { childList: true, subtree: true });
-                console.log('=== CLEARWEB ЗАЩИТА АКТИВНА ===');
             })();
         `;
+        if (doc.head) doc.head.prepend(blockerScript);
+
+        // 4. Формирование итогового HTML
+        const finalHtml = doc.documentElement.outerHTML;
+
+        // --- ОТКРЫТИЕ РЕЗУЛЬТАТА ---
         
-        if (doc.head) {
-            doc.head.insertBefore(uBlockScriptlet, doc.head.firstChild);
-        }
-
-        const cspMeta = doc.createElement('meta');
-        cspMeta.setAttribute('http-equiv', 'Content-Security-Policy');
-        cspMeta.setAttribute('content', "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:");
-        doc.head.insertBefore(cspMeta, doc.head.firstChild);
-
-        const cleanedHtml = '<!DOCTYPE html>\n' + doc.documentElement.outerHTML;
-
-        const cleanWindow = window.open('', '_blank');
-        if (cleanWindow) {
-            cleanWindow.document.write(cleanedHtml);
-            cleanWindow.document.close();
-            cleanWindow.document.title = 'ClearWeb: ' + baseUrl.hostname;
+        // Попытка открыть в новом окне
+        const newWindow = window.open('', '_blank');
+        
+        if (newWindow) {
+            newWindow.document.write(finalHtml);
+            newWindow.document.close(); // Важно для завершения загрузки
         } else {
-            const blob = new Blob([cleanedHtml], { type: 'text/html' });
+            // Если браузер заблокировал popup, скачиваем файл
+            const blob = new Blob([finalHtml], { type: 'text/html' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = 'clearweb_' + baseUrl.hostname + '.html';
+            a.download = `clearweb_${baseUrl.hostname}.html`;
+            document.body.appendChild(a);
             a.click();
+            document.body.removeChild(a);
             URL.revokeObjectURL(url);
-            alert('Браузер заблокировал всплывающее окно. Файл скачан автоматически.');
+            alert('Браузер заблокировал всплывающее окно. Файл скачан на компьютер. Откройте его вручную.');
         }
 
     } catch (error) {
-        console.error('Ошибка:', error);
-        alert('Произошла ошибка при загрузке: ' + error.message);
+        console.error(error);
+        alert('Ошибка: ' + error.message);
     } finally {
         btn.textContent = originalText;
         btn.disabled = false;
+        input.disabled = false;
     }
 }
 
+// Обработка нажатия Enter
 document.addEventListener('DOMContentLoaded', () => {
-    const urlField = document.getElementById('url-field');
-    if (urlField) {
-        urlField.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                processTargetSite();
-            }
+    const input = document.getElementById('url-field');
+    if (input) {
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') processTargetSite();
         });
     }
 });
